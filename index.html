@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>V1BATTLE PONG</title>
+  <title>BATTLE PONG</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
   <style>
@@ -673,7 +673,7 @@ html, body {
       <div class="faction-prompt">CHOOSE YOUR FACTION</div>
 
       <div class="faction-cards">
-        <div class="faction-card" id="card-cyan" data-faction="cyan">
+        <div class="faction-card" id="card-cyan" onclick="chooseFaction('cyan')">
           <div class="faction-glow cyan-glow"></div>
           <div class="faction-icon">◈</div>
           <div class="faction-name">CYAN</div>
@@ -683,12 +683,12 @@ html, body {
             <span>SPD ████░</span>
             <span>SIZ ███░░</span>
           </div>
-          <button class="join-btn cyan-btn">JOIN VANGUARD</button>
+          <button class="join-btn cyan-btn" onclick="chooseFaction('cyan')">JOIN VANGUARD</button>
         </div>
 
         <div class="faction-vs">VS</div>
 
-        <div class="faction-card" id="card-red" data-faction="red">
+        <div class="faction-card" id="card-red" onclick="chooseFaction('red')">
           <div class="faction-glow red-glow"></div>
           <div class="faction-icon">◆</div>
           <div class="faction-name">RED</div>
@@ -698,7 +698,7 @@ html, body {
             <span>POW ████░</span>
             <span>SIZ ████░</span>
           </div>
-          <button class="join-btn red-btn">JOIN DOMINION</button>
+          <button class="join-btn red-btn" onclick="chooseFaction('red')">JOIN DOMINION</button>
         </div>
       </div>
     </div>
@@ -1509,12 +1509,9 @@ loop();
 // ─────────────────────────────────────────────────────────────
 //  FACTION SELECT SCREEN
 // ─────────────────────────────────────────────────────────────
-document.getElementById('card-cyan').addEventListener('click', () => chooseFaction('cyan'));
-document.getElementById('card-red').addEventListener('click',  () => chooseFaction('red'));
-document.querySelector('.cyan-btn').addEventListener('click', (e) => { e.stopPropagation(); chooseFaction('cyan'); });
-document.querySelector('.red-btn').addEventListener('click',  (e) => { e.stopPropagation(); chooseFaction('red'); });
+// faction clicks handled via inline onclick
 
-function chooseFaction(faction) {
+window.chooseFaction = function chooseFaction(faction) {
   GS = {
     faction,
     playerStats: {},
