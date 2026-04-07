@@ -855,7 +855,7 @@ const STAT_DEFS = [
 const ARCHETYPES = {
   cannon: { POW:80, SPD:55, SIZ:20, RFX:25, INT:10, LCK:10 },
   wall:   { POW:15, SPD:25, SIZ:80, RFX:45, INT:20, LCK:15 },
-  speed:  { POW:25, SPD:80, SIZ:35, RFX:60, INT:10, LCK:10 - 20 },
+  speed:  { POW:25, SPD:80, SIZ:35, RFX:60, INT:10, LCK:10 },
   trick:  { POW:25, SPD:35, SIZ:25, RFX:40, INT:65, LCK:10 }
 };
 
@@ -1008,14 +1008,15 @@ const canvas = document.getElementById('gameCanvas');
 const ctx    = canvas.getContext('2d');
 
 function resizeCanvas() {
-  const hudTop    = document.getElementById('hud-top');
-  const abilityBar= document.getElementById('ability-bar-wrap');
-  const controls  = document.getElementById('mobile-controls');
-  const usedH = (hudTop?.offsetHeight || 70) + (abilityBar?.offsetHeight || 18) + (controls?.offsetHeight || 88);
-  const w = Math.min(window.innerWidth, 480);
-  const h = window.innerHeight - usedH;
-  canvas.width  = w;
-  canvas.height = Math.max(h, 200);
+  // Use fixed known heights so this works even when screen is hidden
+  const HUD_H      = 72;   // hud-top
+  const ABILITY_H  = 22;   // ability bar
+  const CONTROLS_H = 90;   // mobile buttons
+  const RESERVED   = HUD_H + ABILITY_H + CONTROLS_H;
+  canvas.width  = Math.min(window.innerWidth, 480);
+  canvas.height = Math.max(window.innerHeight - RESERVED, 220);
+  // Re-layout paddles whenever canvas resizes
+  layoutPaddles();
 }
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
@@ -1045,11 +1046,12 @@ function makePlayerState(stats, faction, isAI = false) {
 function initBall() {
   const angle = (Math.random() < 0.5 ? 1 : -1) * (Math.PI / 4 + Math.random() * Math.PI / 6);
   const spd = BALL_BASE_SPD;
+  // Always serve ball going DOWN toward player first
   return {
     x: canvas.width / 2,
     y: canvas.height / 2,
     vx: Math.cos(angle) * spd,
-    vy: Math.sin(angle) * spd * (Math.random() < 0.5 ? 1 : -1),
+    vy: Math.abs(Math.sin(angle) * spd) * 0.8, // always toward player to start
     r: 7,
     trail: []
   };
@@ -1077,11 +1079,13 @@ function startMatch() {
   GS.frameCount = 0;
   GS.scoreFlash = 0;
 
-  layoutPaddles();
-  updateHUD();
   showScreen('game');
-  resizeCanvas();
-  setTimeout(layoutPaddles, 50); // after resize settles
+  // Give the DOM one frame to render the game screen before sizing
+  requestAnimationFrame(() => {
+    resizeCanvas();
+    layoutPaddles();
+    updateHUD();
+  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1147,7 +1151,7 @@ function activateAbility(p, enemy) {
 //  PHYSICS UPDATE
 // ─────────────────────────────────────────────────────────────
 function update() {
-  if (!GS || GS.phase !== 'playing') return;
+  if (!GS || !GS.player || !GS.ball || GS.phase !== 'playing') return;
   GS.frameCount++;
   const p = GS.player;
   const e = GS.enemy;
@@ -1265,11 +1269,8 @@ function applyHit(b, p, pW, dirSign) {
   );
 
   b.vx = hitPoint * 7 * spinMult;
-  b.vy = -Math.abs(b.vy) * dirSign < 0
-    ? -speed * Math.sign(dirSign)
-    : speed * Math.sign(dirSign) * -1;
-
-  // Ensure correct direction
+  // dirSign 1 = player paddle, ball must go UP (negative vy)
+  // dirSign -1 = enemy paddle, ball must go DOWN (positive vy)
   b.vy = dirSign === 1 ? -Math.abs(speed * 0.85) : Math.abs(speed * 0.85);
 
   // Nudge ball out of paddle
@@ -1384,7 +1385,7 @@ function pct(id, val) {
 // ─────────────────────────────────────────────────────────────
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (!GS || GS.phase === 'upgrade' || GS.phase === 'gameover') return;
+  if (!GS || !GS.player || GS.phase === 'upgrade' || GS.phase === 'gameover') return;
 
   const p  = GS.player;
   const e  = GS.enemy;
@@ -1438,7 +1439,17 @@ function render() {
     ctx.shadowBlur  = 16;
     ctx.fillStyle   = col;
     ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 3);
+    const r3 = 3;
+    ctx.moveTo(x + r3, y);
+    ctx.lineTo(x + w - r3, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r3);
+    ctx.lineTo(x + w, y + h - r3);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r3, y + h);
+    ctx.lineTo(x + r3, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r3);
+    ctx.lineTo(x, y + r3);
+    ctx.quadraticCurveTo(x, y, x + r3, y);
+    ctx.closePath();
     ctx.fill();
     ctx.shadowBlur = 0;
     // Shine strip
