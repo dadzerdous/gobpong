@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>BATTLE PONG</title>
+  <title>v3BATTLE PONG</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
   <style>
@@ -1008,21 +1008,16 @@ const canvas = document.getElementById('gameCanvas');
 const ctx    = canvas.getContext('2d');
 
 function resizeCanvas() {
-  const hudTop    = document.getElementById('hud-top');
-  const abilityBar= document.getElementById('ability-bar-wrap');
-  const controls  = document.getElementById('mobile-controls');
-  
-  // Calculate heights, defaulting to typical values if elements aren't rendered yet
-  const hTop = hudTop ? hudTop.offsetHeight : 75;
-  const hAbility = abilityBar ? abilityBar.offsetHeight : 20;
-  const hControls = controls ? controls.offsetHeight : 90;
-  
-  const usedH = hTop + hAbility + hControls;
-  canvas.width  = Math.min(window.innerWidth, 480);
-  canvas.height = window.innerHeight - usedH;
-  
-  // Re-center paddles if they exist
-  if (GS && GS.player) layoutPaddles();
+  const hudTop = document.getElementById('hud-top');
+  const abilityBar = document.getElementById('ability-bar-wrap');
+  const controls = document.getElementById('mobile-controls');
+  
+  // Calculate space, but ensure we never go below 300px height
+  const usedH = (hudTop?.offsetHeight || 70) + (abilityBar?.offsetHeight || 20) + (controls?.offsetHeight || 90);
+  
+  canvas.width = Math.min(window.innerWidth, 480);
+  const calculatedHeight = window.innerHeight - usedH - 20;
+  canvas.height = Math.max(calculatedHeight, 400); // SAFETY: Minimum 400px high
 }
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
@@ -1049,81 +1044,53 @@ function makePlayerState(stats, faction, isAI = false) {
   };
 }
 
-// ─────────────────────────────────────────────────────────────
-//  PHYSICS FIXES: COLLISION & INITIALIZATION
-// ─────────────────────────────────────────────────────────────
-
 function initBall() {
-  // Fix: Ensure vy (vertical) always has a minimum speed so it doesn't slide sideways
-  const angle = (Math.random() < 0.5 ? 1 : -1) * (Math.PI / 4 + Math.random() * Math.PI / 8);
-  const spd = BALL_BASE_SPD;
-  return {
-    x: canvas.width / 2,
-    y: canvas.height / 2,
-    vx: Math.cos(angle) * spd,
-    // Fix: Force a clear vertical direction toward the player (positive) or AI (negative)
-    vy: (Math.random() < 0.5 ? 1 : -1) * Math.abs(Math.sin(angle) * spd),
-    r: 7,
-    trail: []
-  };
+  const angle = (Math.random() < 0.5 ? 1 : -1) * (Math.PI / 4 + Math.random() * Math.PI / 6);
+  const spd = BALL_BASE_SPD;
+  return {
+    x: canvas.width / 2,
+    y: canvas.height / 2,
+    vx: Math.cos(angle) * spd,
+    vy: Math.sin(angle) * spd * (Math.random() < 0.5 ? 1 : -1),
+    r: 7,
+    trail: []
+  };
 }
 
 function layoutPaddles() {
   if (!GS || !GS.player || !GS.enemy) return;
-  
-  // Fix: Ensure we use the freshly calculated canvas dimensions
   const p = GS.player;
   const e = GS.enemy;
-  p.y = canvas.height - 30; // Positioned slightly up from bottom
+  
+  // Hard-coded offsets to ensure they are visible
+  p.y = canvas.height - 40; 
   p.x = canvas.width / 2 - p.derived.paddleW / 2;
   p.targetX = p.x;
 
-  e.y = 20; // Positioned slightly down from top
+  e.y = 20; 
   e.x = canvas.width / 2 - e.derived.paddleW / 2;
   
-  console.log("Paddles Layout: Player Y at " + p.y);
+  console.log("Paddles placed at Y:", e.y, "and", p.y);
 }
-
-function applyHit(b, p, pW, dirSign) {
-  const hitPoint = (b.x - (p.x + pW / 2)) / (pW / 2); 
-  const spinEff  = getEffect(p, 'next-hit-spin');
-  const spinMult = spinEff ? spinEff.mult : 1;
-
-  const speed = Math.min(
-    Math.sqrt(b.vx * b.vx + b.vy * b.vy) * (1 + p.derived.ballSpeedMult * 0.06),
-    BALL_MAX_SPD
-  );
-
-  b.vx = hitPoint * 7 * spinMult;
-  b.vy = dirSign === 1 ? -Math.abs(speed * 0.85) : Math.abs(speed * 0.85);
-
-  // FIX: "The Nudge" - Teleport ball outside the paddle box to prevent sliding/sticking
-  if (dirSign === 1) {
-    b.y = p.y - b.r - 2; 
-  } else {
-    b.y = p.y + p.derived.paddleH + b.r + 2;
-  }
-
-  if (spinEff) p.effects = p.effects.filter(e => e.type !== 'next-hit-spin');
-}
-
 function startMatch() {
-  const playerStats = GS.playerStats;
-  const enemyStats  = { POW:40, SPD:42, SIZ:45, RFX:40, INT:40, LCK:30 };
+  const playerStats = GS.playerStats;
+  const enemyStats = { POW: 40, SPD: 42, SIZ: 45, RFX: 40, INT: 40, LCK: 30 };
 
-  GS.player = makePlayerState(playerStats, GS.faction);
-  GS.enemy  = makePlayerState(enemyStats, GS.faction === 'cyan' ? 'red' : 'cyan', true);
-  
+  GS.player = makePlayerState(playerStats, GS.faction);
+  GS.enemy = makePlayerState(enemyStats, GS.faction === 'cyan' ? 'red' : 'cyan', true);
+
+  resizeCanvas();
+  layoutPaddles();
+  GS.ball = initBall();
+  GS.round = 1;
+  GS.phase = 'playing';
+  GS.frameCount = 0;
+  GS.scoreFlash = 0;
+  updateHUD();
+
   showScreen('game');
-  
-  // FIX: Wait for the screen to be visible before measuring canvas for paddle placement
-  requestAnimationFrame(() => {
-    resizeCanvas();
-    GS.ball = initBall();
-    layoutPaddles();
-    updateHUD();
-    GS.phase = 'playing';
-  });
+
+  console.log("Game fully initialized");
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1423,7 +1390,16 @@ function pct(id, val) {
 // ─────────────────────────────────────────────────────────────
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (!GS || GS.phase === 'upgrade' || GS.phase === 'gameover') return;
+
+  if (
+    !GS ||
+    !GS.player ||
+    !GS.enemy ||
+    !GS.ball ||
+    GS.phase !== 'playing'
+  ) {
+    return;
+  }
 
   const p  = GS.player;
   const e  = GS.enemy;
