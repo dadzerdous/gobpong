@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>V1BATTLE PONG</title>
+  <title>BATTLE PONG</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
   <style>
@@ -207,6 +208,23 @@ html, body {
   border-top:1px solid var(--border); flex-shrink:0;
 }
 .ctrl-group { display:flex; gap:8px; }
+
+/* Analog stick */
+#analog-stick-wrap { display:flex; flex-direction:column; align-items:center; gap:4px; }
+#analog-zone {
+  width:66px; height:66px; border-radius:50%;
+  background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.12);
+  position:relative; touch-action:none; cursor:grab;
+  box-shadow:0 0 10px rgba(0,245,255,0.1);
+}
+#analog-knob {
+  width:28px; height:28px; border-radius:50%;
+  background:radial-gradient(circle at 35% 35%,rgba(255,255,255,0.3),rgba(0,245,255,0.6));
+  border:1px solid var(--cyan); box-shadow:0 0 8px var(--cyan-glow);
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  transition:transform 0.05s; pointer-events:none;
+}
+
 .ctrl-btn {
   width:66px; height:66px; background:rgba(255,255,255,0.04);
   border:1px solid var(--border); border-radius:8px; color:var(--dim);
@@ -287,6 +305,15 @@ html, body {
 .gameover-title  { font-family:var(--font-ttl); font-size:1rem; font-weight:400; letter-spacing:.4em; color:var(--dim); }
 .gameover-stats  { font-size:.7rem; color:var(--dim); line-height:2; letter-spacing:.1em; }
 
+
+/* Juke flash bar */
+@keyframes juke-flash { 0%{opacity:0} 25%{opacity:1} 100%{opacity:0} }
+#juke-indicator {
+  position:fixed; top:0; left:0; right:0; height:3px;
+  pointer-events:none; z-index:998; opacity:0;
+}
+#juke-indicator.firing { animation:juke-flash 0.35s ease-out forwards; }
+
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.7} }
 .flash-overlay { position:fixed; inset:0; pointer-events:none; z-index:999; animation:flashout .25s ease-out forwards; }
 @keyframes flashout { from{opacity:.6} to{opacity:0} }
@@ -294,6 +321,7 @@ html, body {
 </head>
 <body>
 <div class="scanlines"></div>
+<div id="juke-indicator"></div>
 
 <!-- FACTION SELECT -->
 <div id="screen-faction" class="screen active">
@@ -386,7 +414,12 @@ html, body {
 
   <div id="mobile-controls">
     <div class="ctrl-group"><button class="ctrl-btn" id="btn-move-left">◀</button></div>
-    <div class="ctrl-group"><button class="ctrl-btn ability-ctrl" id="btn-ability">⚡</button></div>
+    <div class="ctrl-group">
+      <div id="analog-stick-wrap">
+        <div id="analog-zone"><div id="analog-knob"></div></div>
+        <button class="ctrl-btn ability-ctrl" id="btn-ability">⚡</button>
+      </div>
+    </div>
     <div class="ctrl-group"><button class="ctrl-btn" id="btn-move-right">▶</button></div>
   </div>
 </div>
@@ -450,16 +483,16 @@ const STAT_DEFS = [
   { key:'POW', label:'POWER',  desc:'Ball speed on hit',      defaultVal:30 },
   { key:'SPD', label:'SPEED',  desc:'Paddle movement speed',  defaultVal:35 },
   { key:'SIZ', label:'SIZE',   desc:'Paddle width',           defaultVal:35 },
-  { key:'RFX', label:'REFLEX', desc:'Input smoothness',       defaultVal:30 },
+  { key:'JUK', label:'JUKE',   desc:'Sudden dodge chance',    defaultVal:25 },
   { key:'INT', label:'INTEL',  desc:'Mana pool & cooldowns',  defaultVal:35 },
   { key:'LCK', label:'LUCK',   desc:'Better upgrade offers',  defaultVal:35 }
 ];
 
 const ARCHETYPES = {
-  cannon:{ POW:80,SPD:55,SIZ:20,RFX:25,INT:10,LCK:10 },
-  wall:  { POW:15,SPD:25,SIZ:80,RFX:45,INT:20,LCK:15 },
-  speed: { POW:25,SPD:80,SIZ:35,RFX:60,INT:10,LCK:10 },
-  trick: { POW:25,SPD:35,SIZ:25,RFX:40,INT:65,LCK:10 }
+  cannon:{ POW:80,SPD:50,SIZ:15,JUK:10,INT:15,LCK:10 },
+  wall:  { POW:15,SPD:20,SIZ:80,JUK:15,INT:30,LCK:20 },
+  speed: { POW:20,SPD:80,SIZ:30,JUK:35,INT:15,LCK:20 },
+  trick: { POW:20,SPD:30,SIZ:20,JUK:55,INT:55,LCK:20 }
 };
 
 function normalizeArch(arch) {
@@ -470,20 +503,21 @@ function normalizeArch(arch) {
 
 function deriveStats(s) {
   return {
-    paddleW:    80 + s.SIZ * 0.7,
-    paddleH:     8 + s.SIZ * 0.06,
-    paddleSpeed: 3.5 + s.SPD * 0.075,
-    ballMult:    1 + s.POW * 0.008,
-    manaMax:    60 + s.INT * 2.4,
-    manaRegen:  0.12 + s.INT * 0.003,
-    rfxSmooth:  0.55 + s.RFX * 0.004,
-    luckMod:    s.LCK / 100
+    paddleW:     80 + s.SIZ * 0.7,
+    paddleH:      8 + s.SIZ * 0.06,
+    paddleSpeed:  3.5 + s.SPD * 0.08,
+    // Ball speed resets on every hit — POW sets the fixed return speed
+    hitSpeed:     5 + (s.POW / 80) * 7,   // 5 (min POW) → 12 (max POW)
+    manaMax:     60 + s.INT * 2.4,
+    manaRegen:   0.12 + s.INT * 0.003,
+    jukeChance:  0.003 + (s.JUK / 80) * 0.012,  // ~0.3%–1.5% per frame
+    luckMod:     s.LCK / 100
   };
 }
 
 // ── ABILITIES ──
 const ABILITIES = {
-  surge:     { name:'SURGE',     cost:40, cooldown:300, desc:'Ball speed +60% for 3s',      apply:(p)     => addFx(p,'ball-speed',1.6,180) },
+  surge:     { name:'SURGE',     cost:40, cooldown:300, desc:'Next return speed +80%',       apply:(p)     => addFx(p,'hit-boost',1.8,1)    },
   shield:    { name:'SHIELD',    cost:35, cooldown:280, desc:'Paddle width +80% for 2s',    apply:(p)     => addFx(p,'paddle-wide',1.8,120) },
   curve:     { name:'CURVEBALL', cost:25, cooldown:200, desc:'Next hit: heavy spin',         apply:(p)     => addFx(p,'next-spin',2.5,999) },
   freeze:    { name:'FREEZE',    cost:50, cooldown:360, desc:'Slows enemy paddle 2s',        apply:(p,e)   => addFx(e,'paddle-slow',0.3,120) },
@@ -505,6 +539,7 @@ const UPGRADE_POOL = [
   {id:'siz1', name:'Big Board',    icon:'📋', rarity:'common',    desc:'+10 SIZ',          apply:gs=>bump(gs,'SIZ',10)},
   {id:'int1', name:'Focus',        icon:'🧠', rarity:'common',    desc:'+10 INT',          apply:gs=>bump(gs,'INT',10)},
   {id:'lck1', name:"Rabbit's Foot",icon:'🐇', rarity:'common',    desc:'+10 LCK',          apply:gs=>bump(gs,'LCK',10)},
+  {id:'juk1', name:'Ghost Step',    icon:'👻', rarity:'common',    desc:'+12 JUK',  apply:gs=>bump(gs,'JUK',12)},
   {id:'hp1',  name:'Iron Will',    icon:'❤', rarity:'common',    desc:'+1 Max HP',        apply:gs=>{gs.player.maxHp++;gs.player.hp++;}},
   {id:'rush', name:'Adrenal Rush', icon:'🔥', rarity:'rare',      desc:'+8 POW +8 SPD',   apply:gs=>{bump(gs,'POW',8);bump(gs,'SPD',8);}},
   {id:'all5', name:'Ascendant',    icon:'✨', rarity:'rare',      desc:'+5 all stats',    apply:gs=>STAT_DEFS.forEach(s=>bump(gs,s.key,5))},
@@ -515,7 +550,7 @@ const UPGRADE_POOL = [
   {id:'ab_mg',name:'Unlock MAGNET',    icon:'🧲', rarity:'rare', desc:'Equip Magnet',     apply:gs=>{gs.player.ability='magnet';}},
   {id:'glass',name:'Glass Cannon', icon:'💎', rarity:'legendary', desc:'+25 POW -10 SIZ', apply:gs=>{bump(gs,'POW',25);bump(gs,'SIZ',-10);}},
   {id:'tank', name:'Immovable',    icon:'🏔', rarity:'legendary', desc:'+30 SIZ -10 SPD', apply:gs=>{bump(gs,'SIZ',30);bump(gs,'SPD',-10);}},
-  {id:'god',  name:'Godspeed',     icon:'⚔', rarity:'legendary', desc:'+20 SPD +20 RFX', apply:gs=>{bump(gs,'SPD',20);bump(gs,'RFX',20);}},
+  {id:'god',  name:'Godspeed',     icon:'⚔', rarity:'legendary', desc:'+20 SPD +20 RFX', apply:gs=>{bump(gs,'SPD',20);bump(gs,'JUK',20);}},
   {id:'c1',   name:'Heavy Burden', icon:'💀', rarity:'curse',     desc:'-10 SPD +20 POW', apply:gs=>{bump(gs,'SPD',-10);bump(gs,'POW',20);}},
   {id:'c2',   name:'Mana Drought', icon:'🌵', rarity:'curse',     desc:'-15 INT +15 POW', apply:gs=>{bump(gs,'INT',-15);bump(gs,'POW',15);}}
 ];
@@ -570,7 +605,8 @@ function makePlayer(stats, faction, isAI=false) {
   const d = deriveStats(stats);
   return { stats, derived:d, faction, isAI, x:0, y:0, targetX:0,
     hp:3, maxHp:3, mana:d.manaMax*0.5, ability:'surge',
-    abilityCooldown:0, effects:[], score:0, xp:0, lvl:1 };
+    abilityCooldown:0, effects:[], score:0, xp:0, lvl:1,
+    jukeCooldown:0 };
 }
 
 function initBall() {
@@ -622,6 +658,39 @@ setupBtn('btn-move-left','left');
 setupBtn('btn-move-right','right');
 setupBtn('btn-ability','ability');
 
+
+// ── JUKE SYSTEM ──
+// Each frame, roll against jukeChance. If it fires, snap paddle sideways.
+// LCK biases the direction toward the ball (favorable juke).
+function tickJuke(p) {
+  if(!GS||!GS.ball) return;
+  if(p.jukeCooldown>0){ p.jukeCooldown--; return; }
+  if(Math.random() > p.derived.jukeChance) return;
+
+  const szEff=getFx(p,'paddle-wide');
+  const pW=p.derived.paddleW*(szEff?szEff.val:1);
+  let dir;
+  if(Math.random() < p.derived.luckMod * 0.65){
+    // Lucky juke — toward ball
+    dir = GS.ball.x < (p.x + pW/2) ? -1 : 1;
+  } else {
+    dir = Math.random()<0.5 ? -1 : 1;
+  }
+  const dist = 16 + Math.random()*24; // 16–40px
+  p.targetX += dir * dist;
+  p.targetX = Math.max(0, Math.min(canvas.width - pW, p.targetX));
+  p.jukeCooldown = 45 + Math.floor(Math.random()*35);
+
+  // Flash a thin color bar at top of screen
+  const bar=document.getElementById('juke-indicator');
+  if(bar){
+    bar.style.background=FACTION[p.faction].color;
+    bar.classList.remove('firing');
+    void bar.offsetWidth;
+    bar.classList.add('firing');
+  }
+}
+
 // ── UPDATE ──
 function update() {
   if(!GS||GS.phase!=='playing'||!GS.player||!GS.ball) return;
@@ -644,6 +713,9 @@ function update() {
   e.mana=Math.min(e.derived.manaMax, e.mana+e.derived.manaRegen);
   tickFx(p); tickFx(e);
 
+  // Juke rolls
+  tickJuke(p);
+
   // AI ability
   const eAb=ABILITIES[e.ability];
   if(eAb&&e.mana>=eAb.cost&&e.abilityCooldown===0&&Math.random()<0.004){
@@ -658,7 +730,7 @@ function update() {
   if(INPUT.left)  p.targetX-=pSpd;
   if(INPUT.right) p.targetX+=pSpd;
   p.targetX=Math.max(0,Math.min(canvas.width-pW,p.targetX));
-  p.x+=(p.targetX-p.x)*p.derived.rfxSmooth;
+  p.x = p.targetX; // Direct movement — snappy, no lerp
 
   // AI move
   const slEff=getFx(e,'paddle-slow');
@@ -685,12 +757,14 @@ function update() {
 
   // Paddle hits
   if(hits(b,p.x,p.y,pW,p.derived.paddleH)){
-    applyBounce(b,p.x,p.y,pW,p.derived.paddleH,-1,p.derived.ballMult,getFx(p,'next-spin'));
-    if(getFx(p,'next-spin')) p.effects=p.effects.filter(e=>e.type!=='next-spin');
+    const boostFx = getFx(p,'hit-boost');
+    applyBounce(b,p.x,p.y,pW,p.derived.paddleH,-1,p.derived.hitSpeed,getFx(p,'next-spin'),boostFx);
+    if(getFx(p,'next-spin')) p.effects=p.effects.filter(ef=>ef.type!=='next-spin');
+    if(boostFx)              p.effects=p.effects.filter(ef=>ef.type!=='hit-boost');
     p.mana=Math.min(p.derived.manaMax,p.mana+8); p.xp++;
   }
   if(hits(b,e.x,e.y,eW,e.derived.paddleH)){
-    applyBounce(b,e.x,e.y,eW,e.derived.paddleH,1,e.derived.ballMult,null);
+    applyBounce(b,e.x,e.y,eW,e.derived.paddleH,1,e.derived.hitSpeed,null,null);
     e.mana=Math.min(e.derived.manaMax,e.mana+8);
   }
 
@@ -715,13 +789,14 @@ function hits(b,px,py,pw,ph){
   return b.x+b.r>px&&b.x-b.r<px+pw&&b.y+b.r>py&&b.y-b.r<py+ph;
 }
 
-function applyBounce(b,px,py,pw,ph,dir,ballMult,spinFx){
-  // dir: -1 = player paddle (ball goes up), 1 = enemy paddle (ball goes down)
-  const hp=(b.x-(px+pw/2))/(pw/2);
-  const spin=spinFx?spinFx.val:1;
-  const spd=Math.min(Math.sqrt(b.vx*b.vx+b.vy*b.vy)*(1+(ballMult-1)*0.08)+0.15, BALL_MAX);
-  b.vx=hp*7*spin;
-  b.vy=dir===-1?-Math.abs(spd*0.88):Math.abs(spd*0.88);
+function applyBounce(b,px,py,pw,ph,dir,hitSpd,spinFx,boostFx){
+  // Ball speed RESETS each hit — no accumulation. Feel: catch-and-throw
+  const hp   = (b.x-(px+pw/2))/(pw/2);  // -1 to 1
+  const spin = spinFx  ? spinFx.val  : 1;
+  const boost= boostFx ? boostFx.val : 1;
+  const spd  = hitSpd * boost;           // fixed speed from POW stat
+  b.vx = hp * 6.5 * spin;
+  b.vy = dir===-1 ? -Math.abs(spd*0.9) : Math.abs(spd*0.9);
   if(dir===-1) b.y=py-b.r-2; else b.y=py+ph+b.r+2;
 }
 
@@ -830,14 +905,45 @@ function flashScreen(color){
   setTimeout(()=>el.remove(),300);
 }
 
+
+// ── ANALOG STICK ──
+(function(){
+  const zone=document.getElementById('analog-zone');
+  const knob=document.getElementById('analog-knob');
+  if(!zone) return;
+  let active=false;
+  const MAX_R=22, DEAD=0.15;
+  const getX=ev=>ev.touches?ev.touches[0].clientX:ev.clientX;
+  function move(ev){
+    if(!active) return; ev.preventDefault();
+    const rect=zone.getBoundingClientRect();
+    const dx=getX(ev)-(rect.left+rect.width/2);
+    const cl=Math.max(-MAX_R,Math.min(MAX_R,dx));
+    knob.style.transform=`translate(calc(-50% + ${cl}px),-50%)`;
+    const norm=cl/MAX_R;
+    INPUT.left=norm<-DEAD; INPUT.right=norm>DEAD;
+    zone.style.borderColor=(Math.abs(norm)>DEAD)?'var(--cyan)':'rgba(255,255,255,0.12)';
+  }
+  function start(ev){ active=true; zone.style.boxShadow='0 0 16px var(--cyan-glow)'; move(ev); }
+  function end(){ active=false; INPUT.left=false; INPUT.right=false; knob.style.transform='translate(-50%,-50%)'; zone.style.borderColor='rgba(255,255,255,0.12)'; zone.style.boxShadow='0 0 10px rgba(0,245,255,0.1)'; }
+  zone.addEventListener('touchstart',start,{passive:false});
+  zone.addEventListener('touchmove',move,{passive:false});
+  zone.addEventListener('touchend',end,{passive:false});
+  zone.addEventListener('mousedown',start);
+  window.addEventListener('mousemove',ev=>{ if(active)move(ev); });
+  window.addEventListener('mouseup',end);
+})();
+
 // ── LOOP ──
 function loop(){ update(); render(); requestAnimationFrame(loop); }
 loop();
 
 // ── STATS PANEL ──
 document.getElementById('stats-peek-btn').addEventListener('click', ()=>{
+  const statsPanel = document.getElementById('stats-panel');
+  if(!statsPanel.classList.contains('hidden')){ statsPanel.classList.add('hidden'); return; }
   if(!GS||!GS.player) return;
-  const p=GS.player, panel=document.getElementById('stats-panel');
+  const p=GS.player;
   const f=FACTION[GS.faction];
   setText('sp-faction-name', f.name);
   document.getElementById('sp-faction-name').style.color=f.color;
@@ -865,7 +971,7 @@ document.getElementById('stats-peek-btn').addEventListener('click', ()=>{
     grid.appendChild(row);
   });
 
-  panel.classList.remove('hidden');
+  statsPanel.classList.remove('hidden');
 });
 
 document.getElementById('sp-close').addEventListener('click', ()=>{
